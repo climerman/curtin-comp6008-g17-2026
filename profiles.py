@@ -114,20 +114,3 @@ def sample_day(rng, weather=None):
         "feed_in": FEED_IN_PRICE,
         "ev_plugged_in": ev_plugged_in(),
     }
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    rng = np.random.default_rng(42)
-    fig, ax1 = plt.subplots(figsize=(9, 4))
-    for w in WEATHER_TYPES:
-        ax1.plot(HOURS, solar_profile(w), label=f"solar ({w})")
-    ax1.plot(HOURS, BASE_LOAD, "k--", label="household load")
-    ax1.set_xlabel("hour of day"); ax1.set_ylabel("kW")
-    ax2 = ax1.twinx()
-    ax2.step(HOURS, price_profile(), "r", where="post", alpha=0.5, label="price")
-    ax2.set_ylabel("$/kWh", color="r")
-    ax1.legend(loc="upper left"); ax1.set_title("Daily profiles")
-    plt.tight_layout(); plt.savefig("profiles.png", dpi=120)
-    print("Sample day:", sample_day(rng)["weather"], "- plot saved to profiles.png")
