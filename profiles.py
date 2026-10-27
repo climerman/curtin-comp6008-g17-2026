@@ -40,6 +40,7 @@ def solar_profile(weather, rng=None, noise=0.1):
 
 # ---------------------------------------------------------------------------
 # Household base load (kW) - things we do NOT control (fridge, lights, cooking)
+# 4x6 hours to baseline.
 # ---------------------------------------------------------------------------
 BASE_LOAD = np.array([
     0.4, 0.3, 0.3, 0.3, 0.3, 0.4,    # 00-05 night

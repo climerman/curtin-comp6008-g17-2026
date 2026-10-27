@@ -1,18 +1,14 @@
 """
-energy_env.py - Home energy scheduling environment (Gymnasium), 17-dim variant.
+energy_env.py - Home energy scheduling environment (Gymnasium).
 
 One episode = one day, 24 hourly steps, from 07:00 to 07:00 the next morning.
 Starting at 07:00 means the EV's deadline (charged by 07:00 departure) falls
 exactly at the end of the episode.
 
-All physical constants come from profiles.py, so this file and the data
-profiles share a single source of truth.
-
-Observation (17 values, fixed order - do not change without telling the group):
+Observation (15 values, fixed order - do not change without telling the group):
     0 hour_sin, 1 hour_cos, 2 battery_soc, 3 ev_soc, 4 ev_plugged_in,
     5 solar_now, 6 solar_next, 7 load_now, 8 price_now, 9 price_next,
-    10 sunny, 11 cloudy, 12 rainy, 13 washer_pending, 14 dishwasher_pending,
-    15 washer_hours_left, 16 dishwasher_hours_left
+    10 sunny, 11 cloudy, 12 rainy, 13 washer_pending, 14 dishwasher_pending
 
 Action (Discrete 12):  action = battery * 4 + ev * 2 + appliance
     battery:   0 = charge, 1 = idle, 2 = discharge
@@ -56,6 +52,7 @@ class EnergyEnv(gym.Env):
                          2, 2], dtype=np.float32)
         self.observation_space = spaces.Box(low, high, dtype=np.float32)
         self.action_space = spaces.Discrete(12)
+        self.t = 24
 
     # ------------------------------------------------------------------ reset
     def reset(self, seed=None, options=None):
@@ -71,7 +68,10 @@ class EnergyEnv(gym.Env):
 
     # ------------------------------------------------------------------- step
     def step(self, action):
-        assert self.action_space.contains(action)
+        if self.t >= 24:
+            raise RuntimeError("Call reset() before starting another day")
+        if not self.action_space.contains(action):
+            raise ValueError("Action must be an integer from 0 to 11")
         h = self.hour
         b_act, ev_act, app_act = decode_action(int(action))
         solar = self.day["solar"][h]
@@ -83,7 +83,8 @@ class EnergyEnv(gym.Env):
         if app_act == 1:
             for n in self.appliance_names:
                 spec = P.APPLIANCES[n]
-                if self.app_status[n] == "pending" and h >= spec["earliest"]:
+                latest_start = spec["deadline"] - spec["duration_h"]
+                if self.app_status[n] == "pending" and spec["earliest"] <= h <= latest_start:
                     self.app_status[n] = "running"
                     self.app_hours_left[n] = spec["duration_h"]
                     break
@@ -105,6 +106,7 @@ class EnergyEnv(gym.Env):
 
         # 3. Home battery (efficiency loss on the way in and out)
         cap, rate, eff = (P.BATTERY[k] for k in ("capacity_kwh", "max_rate_kw", "efficiency"))
+        battery_before = self.battery_soc * cap
         batt_in = batt_out = 0.0
         if b_act == 0:                                   # charge
             batt_in = min(rate, (1 - self.battery_soc) * cap / eff)
@@ -139,7 +141,11 @@ class EnergyEnv(gym.Env):
         reward = -(cost + penalty)
         info = {"cost": cost, "penalty": penalty, "grid_import": grid_import,
                 "grid_export": grid_export, "hour": h, "weather": self.day["weather"],
-                "ev_shortfall": shortfall,
+                "solar": solar, "load": load, "appliance_kwh": appliance_kwh,
+                "ev_kwh": ev_kwh, "battery_in": batt_in, "battery_out": batt_out,
+                "battery_before": battery_before,
+                "battery_after": self.battery_soc * cap,
+                "ev_soc": self.ev_soc, "ev_shortfall": shortfall,
                 "missed_jobs": sum(1 for n in self.appliance_names
                                    if self.app_status[n] == "missed")}
         return self._obs(), reward, terminated, False, info
